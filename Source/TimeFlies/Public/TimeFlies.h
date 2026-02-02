@@ -4,9 +4,12 @@
 
 #include "Modules/ModuleManager.h"
 
+DECLARE_LOG_CATEGORY_EXTERN(LogTimeFlies, Log, All);
+
 class FTimeFliesModule : public IModuleInterface
 {
 public:
+	
 #if ALLOW_CONSOLE
 	IConsoleCommand* Command;
 #endif

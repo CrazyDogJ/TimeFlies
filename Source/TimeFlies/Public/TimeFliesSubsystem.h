@@ -7,6 +7,7 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "TimeFliesSubsystem.generated.h"
 
+class UTimeFliesReplicatedObject;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTimeFliesTaskComplete, FGuid, CompletedTaskGuid);
 
 /**
@@ -27,6 +28,14 @@ public:
 	/** Task complete delegate. */
 	UPROPERTY(BlueprintAssignable, BlueprintReadWrite)
 	FOnTimeFliesTaskComplete OnTimeFliesTaskCompleteEvent;
+
+	/** On stage actors and custom tasks. */
+	UPROPERTY(BlueprintReadOnly)
+	TMap<FGuid, AActor*> RegisteredTimeFliesActors;
+
+	/** Task object. */
+	UPROPERTY(BlueprintReadOnly)
+	TMap<FGuid, UTimeFliesReplicatedObject*> CustomTasks;
 	
 #if ALLOW_CONSOLE
 	bool bShowDebug = false;
@@ -75,4 +84,24 @@ public:
 	/** For exit to main menu. All tasks will be removed. */
 	UFUNCTION(BlueprintCallable)
 	void ClearTasks();
+
+	// Custom background task ----------------------------------------------------------------------------------
+
+	/** Register actor replicated time flies data. */
+	UFUNCTION(BlueprintCallable)
+	bool RegisterReplicatedData(AActor* Actor);
+	
+	/** Call it on actor BeginPlay. */
+	UFUNCTION(BlueprintCallable)
+	bool RegisterReplicatedActor(AActor* Actor);
+
+	/** Call it on actor EndPlay. */
+	UFUNCTION(BlueprintCallable)
+	bool UnregisterReplicatedActor(AActor* Actor);
+
+	UFUNCTION(BlueprintCallable)
+	TArray<FTimeFliesCustomTaskSaveGame> GetCustomTasksSaveGame();
+
+	UFUNCTION(BlueprintCallable)
+	void LoadCustomTasks(TArray<FTimeFliesCustomTaskSaveGame> SaveGameData);
 };

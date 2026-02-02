@@ -3,7 +3,11 @@
 
 #include "TimeFliesSubsystem.h"
 
+#include "TimeFlies.h"
+#include "TimeFliesActorInterface.h"
+#include "TimeFliesReplicatedObject.h"
 #include "TimeFliesSettings.h"
+#include "Serialization/ObjectAndNameAsStringProxyArchive.h"
 
 void UTimeFliesSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -70,6 +74,11 @@ void UTimeFliesSubsystem::Tick(float DeltaTime)
 #endif
 		
 		Task.AddDeltaTime(GetWorld());
+	}
+
+	for (const auto CustomTask : CustomTasks)
+	{
+		CustomTask.Value->NativeTick(DeltaTime);
 	}
 }
 
@@ -149,4 +158,141 @@ void UTimeFliesSubsystem::OnSaveGameLoaded(const TArray<FTimeFliesTask> SavedTim
 void UTimeFliesSubsystem::ClearTasks()
 {
 	TimeFliesTasks.Empty();
+}
+
+bool UTimeFliesSubsystem::RegisterReplicatedData(AActor* Actor)
+{
+	if (Actor && Actor->HasAuthority())
+	{
+		if (Actor->Implements<UTimeFliesActorInterface>())
+		{
+			const auto RepObjectClass = ITimeFliesActorInterface::Execute_GetReplicatedObjectClass(Actor);
+			const auto Guid = ITimeFliesActorInterface::Execute_GetActorIdentityGuid(Actor);
+			const auto NewRepObject = NewObject<UTimeFliesReplicatedObject>(Actor, RepObjectClass);
+			Actor->AddReplicatedSubObject(NewRepObject);
+			ITimeFliesActorInterface::Execute_SetReplicatedObject(Actor, Cast<UTimeFliesReplicatedObject>(NewRepObject));
+			CustomTasks.Add(Guid, NewRepObject);
+			return true;
+		}
+		else
+		{
+			UE_LOG(LogTimeFlies, Error, TEXT("Register data failed, Actor %s does not implement ITimeFliesActorInterface. "), *Actor->GetName())
+		}
+	}
+
+	UE_LOG(LogTimeFlies, Error, TEXT("Register data failed, Actor not valid. "))
+	return false;
+}
+
+bool UTimeFliesSubsystem::RegisterReplicatedActor(AActor* Actor)
+{
+	if (Actor && Actor->HasAuthority())
+	{
+		if (Actor->Implements<UTimeFliesActorInterface>())
+		{
+			const auto Guid = ITimeFliesActorInterface::Execute_GetActorIdentityGuid(Actor);
+			
+			if (const auto Found = CustomTasks.Find(Guid))
+			{
+				const auto Object = *Found;
+				Object->Rename(nullptr, Actor);
+				Actor->AddReplicatedSubObject(Object);
+				ITimeFliesActorInterface::Execute_SetReplicatedObject(Actor, Cast<UTimeFliesReplicatedObject>(Object));
+			}
+			
+			RegisteredTimeFliesActors.Add(Guid, Actor);
+			return true;
+		}
+		else
+		{
+			UE_LOG(LogTimeFlies, Error, TEXT("Register actor failed, Actor %s does not implement ITimeFliesActorInterface. "), *Actor->GetName())
+		}
+	}
+
+	UE_LOG(LogTimeFlies, Error, TEXT("Register actor failed, Actor not valid. "))
+	return false;
+}
+
+bool UTimeFliesSubsystem::UnregisterReplicatedActor(AActor* Actor)
+{
+	if (Actor && Actor->HasAuthority())
+	{
+		if (Actor->Implements<UTimeFliesActorInterface>())
+		{
+			const auto Guid = ITimeFliesActorInterface::Execute_GetActorIdentityGuid(Actor);
+			if (const auto Found = CustomTasks.Find(Guid))
+			{
+				const auto Object = *Found;
+				Actor->RemoveReplicatedSubObject(Object);
+				Object->Rename(nullptr, this);
+			}
+			return RegisteredTimeFliesActors.Remove(Guid) > 0;
+		}
+		else
+		{
+			UE_LOG(LogTimeFlies, Error, TEXT("Unregister actor failed, Actor %s does not implement ITimeFliesActorInterface. "), *Actor->GetName())
+		}
+	}
+
+	UE_LOG(LogTimeFlies, Error, TEXT("Unregister actor failed, Actor not valid. "))
+	return false;
+}
+
+TArray<FTimeFliesCustomTaskSaveGame> UTimeFliesSubsystem::GetCustomTasksSaveGame()
+{
+	TArray<FTimeFliesCustomTaskSaveGame> SaveGames;
+	
+	for (auto& Pair : CustomTasks)
+	{
+		FTimeFliesCustomTaskSaveGame Entry;
+		Entry.Guid = Pair.Key;
+		Entry.ObjectClass = Pair.Value->GetClass();
+
+		// To byte
+		FMemoryWriter MemoryWriter(Entry.Data, true);
+		FObjectAndNameAsStringProxyArchive Ar(MemoryWriter, false);
+		Pair.Value->Serialize(Ar);
+
+		SaveGames.Add(Entry);
+	}
+
+	return SaveGames;
+}
+
+void UTimeFliesSubsystem::LoadCustomTasks(TArray<FTimeFliesCustomTaskSaveGame> SaveGameData)
+{
+	for (auto Obj : CustomTasks)
+	{
+		// Remove actor rep subobject.
+		if (auto Found = RegisteredTimeFliesActors.Find(Obj.Key))
+		{
+			auto FoundActor = *Found;
+			FoundActor->RemoveReplicatedSubObject(Obj.Value);
+		}
+		Obj.Value->Rename(nullptr, this);
+		Obj.Value->ConditionalBeginDestroy();
+	}
+	
+	CustomTasks.Empty();
+
+	for (const auto& Entry : SaveGameData)
+	{
+		// New object
+		UTimeFliesReplicatedObject* NewObj = NewObject<UTimeFliesReplicatedObject>(this, Entry.ObjectClass);
+
+		// serialize
+		FMemoryReader MemoryReader(Entry.Data, true);
+		FObjectAndNameAsStringProxyArchive Ar(MemoryReader, true);
+		NewObj->Serialize(Ar);
+
+		CustomTasks.Add(Entry.Guid, NewObj);
+
+		// Add actor rep subobject.
+		if (auto Found = RegisteredTimeFliesActors.Find(Entry.Guid))
+		{
+			auto FoundActor = *Found;
+			NewObj->Rename(nullptr, FoundActor);
+			FoundActor->AddReplicatedSubObject(NewObj);
+		}
+	}
 }

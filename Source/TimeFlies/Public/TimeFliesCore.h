@@ -5,9 +5,11 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "NativeGameplayTags.h"
+#include "StructUtils/InstancedStruct.h"
 #include "UObject/Object.h"
 #include "TimeFliesCore.generated.h"
 
+class UTimeFliesReplicatedObject;
 /**
  * Native gameplay tags
  */
@@ -15,6 +17,24 @@ namespace TimeFliesTags
 {
 	TIMEFLIES_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(DefaultPlayedTimeTag)
 }
+
+/**
+ * Save game struct
+ */
+USTRUCT(BlueprintType)
+struct FTimeFliesCustomTaskSaveGame
+{
+	GENERATED_BODY()
+
+	UPROPERTY(SaveGame)
+	FGuid Guid;
+
+	UPROPERTY(SaveGame)
+	TSubclassOf<UTimeFliesReplicatedObject> ObjectClass;
+
+	UPROPERTY(SaveGame)
+	TArray<uint8> Data;
+};
 
 /**
  * Define how time flies.

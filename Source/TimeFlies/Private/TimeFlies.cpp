@@ -8,6 +8,8 @@
 
 #define LOCTEXT_NAMESPACE "FTimeFliesModule"
 
+DEFINE_LOG_CATEGORY(LogTimeFlies);
+
 #if ALLOW_CONSOLE
 namespace FTimeFliesCommands
 {
